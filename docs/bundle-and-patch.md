@@ -1,4 +1,4 @@
-# Bundle execution and JSON PATCH
+# Bundle execution and JSON Patch
 
 ## Enable writes
 
@@ -92,17 +92,17 @@ operation order, additional members and explicit null values. It validates
 structure and JSON Pointer syntax; the server evaluates paths and changes.
 
 `if_match` is optional. Supplying the actual ETag protects a change based on an
-earlier read. Weak tags (`W/"7"`), quoted tags (`"7"`) and Aidbox's bare version
-tokens (`7`) are accepted and sent unchanged. Wildcards, multiple tags, control
+earlier read. Weak tags (`W/"7"`, as returned by HAPI FHIR), quoted tags (`"7"`)
+and bare version tokens (`7`, as returned by Aidbox) are accepted and sent unchanged. Wildcards, multiple tags, control
 characters and invalid version IDs are rejected. A 412 does not trigger a retry;
 read the latest resource and reassess the intended change. Omitting `if_match`
 makes the PATCH unconditional.
 
 Both tools accept `prefer="representation"` (default) or `"minimal"`, mapped to
 `Prefer: return=...`. This preference applies to write representations, not GET
-results under the FHIR specification. The tested Aidbox build nevertheless omits GET
-resources from batch responses with `minimal`; use the default `representation`
-when you need those resources. The adapter preserves this observed server behavior.
+results under the FHIR specification. Servers differ here: HAPI FHIR keeps GET
+resources in batch responses with `minimal`, but the tested Aidbox build omits them.
+Use the default `representation` when you need those resources. The adapter preserves this observed server behavior.
 The server may return no representation even when one was requested.
 
 Direct FHIRPath, Merge Patch, XML and Binary-wrapped JSON Patch are not supported.

@@ -1,46 +1,57 @@
 # FHIR MCP Server Test Suite
 
-This directory contains comprehensive test cases for the FHIR MCP server, including unit tests and integration tests with proper mocking to avoid external dependencies.
+This directory contains the test suite for the FHIR MCP server. Unit and
+integration tests mock HTTP. End-to-end tests start the MCP server in a
+subprocess and talk to it over MCP, either against a local stub FHIR server or
+against the public [HAPI FHIR](https://hapi.fhir.org/) test server.
+
+**The default live FHIR server for tests is public HAPI FHIR**
+(`https://hapi.fhir.org/baseR4`). An optional acceptance test can also run
+against Aidbox; see [Optional Aidbox acceptance test](#optional-aidbox-acceptance-test).
 
 ## Test Structure
 
 ```
 tests/
-├── __init__.py
-├── unit/                           # Unit tests
-│   ├── __init__.py
-│   ├── test_utils.py              # Tests for utils module (21 tests)
-│   └── oauth/                      # OAuth-related tests
-│       ├── __init__.py
-│       ├── test_types.py          # Tests for OAuth data types (34 tests)
-│       ├── test_client_provider.py # Tests for OAuth client provider (30 tests)
-│       └── test_common.py         # Tests for OAuth common functions (33 tests)
-└── integration/                    # Integration tests
-│   ├── __init__.py
-│   └── test_integration.py        # Integration tests (5 tests)
-└── e2e/                            # End-to-end tests
-    ├── __init__.py
-    ├── conftest.py
-    └── test_tools.py              # E2E tests for tool flows
+├── unit/                                 # Offline unit tests
+│   ├── oauth/                            # OAuth types, client provider, common functions
+│   ├── field_filter/                     # FHIRPath response filtering
+│   ├── test_utils.py                     # utils module
+│   ├── test_interaction_validation.py    # Bundle and JSON Patch input validation
+│   └── test_e2e_environment.py           # Test-server environment isolation
+├── integration/                          # Offline integration tests
+│   ├── test_integration.py               # Server configuration and OAuth wiring
+│   ├── test_fhir_http.py                 # HTTP transport for execute_bundle/patch
+│   └── test_interaction_handlers.py      # execute_bundle/patch handlers
+├── e2e/                                  # MCP server in a subprocess
+│   ├── conftest.py                       # Server launcher, local stub FHIR server
+│   ├── test_tools.py                     # test_tool_*: live HAPI; others: local stub
+│   ├── test_bundle_patch.py              # execute_bundle/patch against the local stub
+│   └── test_credential_isolation.py      # No credentials leak to test servers
+├── aidbox/
+│   └── test_bundle_patch.py              # Optional live Aidbox acceptance (skipped by default)
+└── test_utils.py
 ```
 
 ## Running Tests
 
-The shared e2e launcher explicitly overrides access-token and OAuth credential
-settings with empty values, preventing inherited environment variables or the
-project `.env` from authenticating requests to test backends. Both the existing
-public HAPI fixture and the local recording fixture use this isolation.
+`python run_tests.py` runs everything under `tests/`, as CI does. That includes the
+live `test_tool_*` tests in `tests/e2e/test_tools.py`, which need internet access and
+create, update and delete test Patient resources on public HAPI. To run without
+contacting HAPI:
 
-Run the credential-isolation regression checks without contacting an external
-FHIR server:
+```bash
+python -m pytest tests/ -k "not test_tool_"
+```
+
+The e2e launcher sets access-token and OAuth credential settings to empty values,
+so neither inherited environment variables nor the project `.env` can
+authenticate requests to test servers. Both the HAPI fixture and the local stub
+fixture use this isolation. To check it without contacting a FHIR server:
 
 ```bash
 python -m pytest tests/unit/test_e2e_environment.py tests/e2e/test_credential_isolation.py -q
 ```
-
-The live `test_tool_*` tests in `tests/e2e/test_tools.py` still contact public HAPI
-and include resource writes. Credential isolation does not make those tests
-offline; select the local tests explicitly when external calls are unwanted.
 
 ### Option 1: Using the test runner script (Recommended)
 ```bash
@@ -121,10 +132,10 @@ The test suite achieves the following coverage:
 
 ## Test Features
 
-### Comprehensive Mocking
-- All external HTTP requests are mocked
-- No real network calls during testing
-- Isolated testing of individual components
+### Mocking
+- Unit and integration tests mock all external HTTP requests
+- Local end-to-end tests use a stub FHIR server on localhost
+- Only the live `test_tool_*` tests (public HAPI) and the optional Aidbox test use a real FHIR server
 
 ### Async Testing Support
 - Full support for async/await patterns
@@ -174,35 +185,54 @@ When adding new tests:
 4. Test both success and failure scenarios
 5. Update this README if adding new test categories
 
-## Bundle/PATCH tests
+## Bundle and PATCH tests
 
-Run local validation, transport and protocol checks without contacting a live FHIR server:
+`execute_bundle` and `patch` are covered by the default suite without a live
+FHIR server:
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/unit tests/integration tests/test_utils.py tests/e2e/test_bundle_patch.py tests/e2e/test_credential_isolation.py -q
+- `tests/unit/test_interaction_validation.py`: Bundle and JSON Patch validation.
+- `tests/integration/test_fhir_http.py` and `test_interaction_handlers.py`: HTTP
+  transport, limits, timeouts and result classification.
+- `tests/e2e/test_bundle_patch.py`: the tools called over MCP against a local stub
+  FHIR server that records each request and returns scripted responses.
+
+```bash
+python -m pytest tests/unit tests/integration tests/test_utils.py tests/e2e/test_bundle_patch.py tests/e2e/test_credential_isolation.py -q
 ```
 
-The recording stub captures bodies and test request headers using dummy
-credentials. The shared subprocess environment explicitly overrides deployment
-credentials and write/limit settings. Fixtures exercising writes opt in explicitly.
+The stub sees only dummy credentials. Tests that exercise writes enable
+`FHIR_MCP_ENABLE_WRITE_TOOLS` explicitly for their own server process.
 
-Aidbox acceptance is skipped by default. Configure these process environment
-variables explicitly for a disposable sandbox:
+### Optional Aidbox acceptance test
+
+[Aidbox](https://www.health-samurai.io/aidbox) is a FHIR server made by Health
+Samurai. It is commercial software with a free development license, and it runs
+locally in Docker. `tests/aidbox/test_bundle_patch.py` uses it because Aidbox lets
+you give a client access policies that allow some resource types and deny
+others. That makes it possible to check behavior the public HAPI server cannot
+show, such as a transaction rolling back because one of its entries is forbidden,
+or a batch reporting a mix of successes and 403s.
+
+The test is skipped unless you set these environment variables:
 
 - `FHIR_TEST_AIDBOX_ENABLE=true`
-- `FHIR_TEST_AIDBOX_URL`: Aidbox FHIR endpoint ending in `/fhir`.
-- `FHIR_TEST_AIDBOX_TOKEN`: restricted service token (never commit it).
+- `FHIR_TEST_AIDBOX_URL`: the Aidbox FHIR endpoint, ending in `/fhir`.
+- `FHIR_TEST_AIDBOX_TOKEN`: an access token for a restricted Aidbox client. Never
+  commit it.
 
-The identity must permit Patient and Observation CRUD, FHIRPath PATCH and Bundle
-execution, while denying Condition writes and native Client/AccessPolicy/User
-administration. The test generates unique synthetic IDs, verifies denial before
-writes and deletes its own resources afterward. Resource history may remain.
+Use a disposable Aidbox instance. The token's client must be allowed Patient and
+Observation create/read/update/delete, FHIRPath PATCH and Bundle execution, and
+must be denied Condition writes and administration of Client, AccessPolicy and
+User. The test checks those denials before it writes anything, uses unique
+synthetic IDs and deletes its resources afterwards. Their version history may
+remain in Aidbox.
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/aidbox -q --no-cov --tb=short -s
+```bash
+python -m pytest tests/aidbox -q --no-cov --tb=short -s
 ```
 
-The test exercises the new tools through a separate MCP process on port 8001.
-It checks linked transactions, rollback, batch partial success, conditional create,
-current/stale ETags, failed JSON Patch tests, Parameters patches and return
-preferences. Run live acceptance separately from other port-8001 protocol tests.
+The test runs its own MCP server on port 8001. It checks linked transactions,
+transaction rollback, batch partial success, conditional create, current and
+stale ETags, failing JSON Patch `test` operations, FHIRPath Parameters patches
+inside Bundles and `Prefer: return` handling. Run it on its own, not in parallel
+with other end-to-end tests, which also use port 8001.

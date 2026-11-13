@@ -6,9 +6,9 @@ Baseline: Python 3.12, `mcp==1.27.1`, `aiohttp==3.13.5`, `fhirpy==2.2.0`.
 
 Design validation: all five JSON examples parse; referenced implementation files were checked. An in-memory FastMCP probe confirmed the pinned SDK advertises and returns the proposed `Annotated[CallToolResult, ResultModel]` structured output, including an empty-body success. This is not a test of an implemented FHIR feature or of the network protocol path. The design work did not change server implementation, deployment credentials, running services or clinical resources. The subsequent review response changes test fixtures and adds credential-isolation regression tests; see section 12.2.
 
-Deployment follow-up (2026-10-20): a dedicated Aidbox writer client now replaces the root token locally. Direct HTTP checks verified current/stale If-Match, successful transactions, transaction rollback on forbidden entries and batch partial persistence. These are server interoperability checks, not implemented MCP-tool acceptance tests. See [local client permissions and renewal](aidbox-client.md). Subsequent MCP acceptance verified Parameters patches and characterized return preferences; see the implementation notes below.
+Interoperability follow-up (2026-10-20): direct HTTP checks against a sandbox Aidbox instance, using a client restricted by Aidbox access policies, verified current/stale If-Match, successful transactions, transaction rollback on forbidden entries and batch partial persistence. Subsequent MCP acceptance verified Parameters patches and characterized return preferences; see the implementation notes below.
 
-This design adds two MCP tools: `execute_bundle` and `patch`. A small HTTP adapter preserves upstream status, headers, and response JSON. Existing tools keep their contracts. Aidbox is the first interoperability target, while the core contracts remain useful with other FHIR R4 servers.
+This design adds two MCP tools: `execute_bundle` and `patch`. A small HTTP adapter preserves upstream status, headers, and response JSON. Existing tools keep their contracts. The contracts target any FHIR R4 server. The project's default live test server is the public HAPI FHIR server, as for the existing tools. Aidbox (a commercial FHIR server from Health Samurai) is used for an optional acceptance test because its per-client access policies make forbidden-entry rollback and mixed batch outcomes testable.
 
 ## 1. Current implementation and consequences
 
@@ -27,7 +27,7 @@ This design adds two MCP tools: `execute_bundle` and `patch`. A small HTTP adapt
 
 Installed fhirpy code was reviewed, not inferred from its method names. `AsyncClient.execute` can POST an empty relative path (rendered as `{base}/?` by its URL builder), but returns only the parsed body. Its private `_do_request` has optional status access, does not return response headers, and maps HTTP 412 to `MultipleResourcesFound`, which obscures stale-version PATCH failures. Its resource `patch(**kwargs)` uses field-object semantics rather than an explicit RFC 6902 document. These are poor foundations for the new response and error contracts.
 
-The running Aidbox CapabilityStatement advertised `batch`, `transaction`, Patient `patch`, and `application/json-patch+json`. No mutation was made to establish those facts. Commit/rollback and PATCH behavior are now covered by the implementation acceptance test described in section 15.
+The running Aidbox CapabilityStatement advertised `batch`, `transaction`, Patient `patch`, and `application/json-patch+json`. Public HAPI FHIR (8.13, checked 2026-11-12) advertises `transaction`, Patient `patch`, and `application/json-patch+json` among its patch formats; it also executes batch Bundles although its system interactions list only `transaction`. No mutation was made to establish those facts. Commit/rollback and PATCH behavior are now covered by the implementation acceptance test described in section 15.
 
 ## 2. Scope and implementation decisions
 
@@ -287,7 +287,7 @@ Extend `get_capabilities(type: str = "")` additively:
 
 Capability discovery is advisory, not a per-write round trip or a mandatory local veto. Metadata can omit supported features (the live server's format list is narrower than Aidbox's documentation). The server is authoritative for actual support and access policy; preserve 405/415/501 responses. Do not globally cache capabilities under one user's token and reuse them for another user. Start without a new cache.
 
-The underlying fields are defined in [CapabilityStatement](https://hl7.org/fhir/R4/capabilitystatement-definitions.html). This feature does not add token acquisition/refresh or per-user login setup. It adds a local registration gate, while the server still enforces data permissions. Before enabling writes, configure a dedicated Aidbox client limited to required resource types and operations; an unrestricted root token is not the deployment identity prescribed for enabled write tools. The local deployment now uses a dedicated scoped client. The adapter cannot infer least privilege from an opaque token; operator provisioning and negative authorization tests establish that property.
+The underlying fields are defined in [CapabilityStatement](https://hl7.org/fhir/R4/capabilitystatement-definitions.html). This feature does not add token acquisition/refresh or per-user login setup. It adds a local registration gate, while the server still enforces data permissions. Before enabling writes, configure a dedicated FHIR client limited to the required resource types and operations; an unrestricted administrative token is not the deployment identity prescribed for enabled write tools. The adapter cannot infer least privilege from an opaque token; operator provisioning and negative authorization tests establish that property.
 
 ## 9. Configuration, compatibility, and observability
 
