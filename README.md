@@ -535,7 +535,7 @@ Tools marked **(write)** are available only when write tools are enabled.
     - `type`: The FHIR resource type name (e.g., "Patient").
     - `id`: The logical ID of the resource to patch.
     - `payload`: An array of JSON Patch operations (e.g., `[{"op": "replace", "path": "/active", "value": false}]`).
-    - `if_match`: (Optional) The resource's current ETag (e.g., `W/"7"`). The server rejects the patch with HTTP 412 if the resource has changed since.
+    - `if_match`: (Optional) The resource's current ETag (e.g., `W/"7"`). If the resource has changed since, the server rejects the patch (HTTP 412, or 409 on HAPI FHIR).
     - `prefer`: (Optional) `representation` (default) or `minimal`.
 
 - `get_user`: Retrieves the currently authenticated user's FHIR resource (for example the linked `Patient` resource) and returns a concise profile containing available demographic fields such as `id`, `name`, and `birthDate`.
@@ -572,7 +572,7 @@ python run_tests.py
 This runs every test under `tests/`:
 - **Unit and integration tests**: offline, with HTTP calls mocked.
 - **Local end-to-end tests** (`tests/e2e/test_bundle_patch.py`, `tests/e2e/test_credential_isolation.py` and the input-validation tests in `tests/e2e/test_tools.py`): start the MCP server and a local stub FHIR server on your machine. No internet access is needed.
-- **Live end-to-end tests** (the `test_tool_*` tests in `tests/e2e/test_tools.py`): run the MCP tools against the public [HAPI FHIR](https://hapi.fhir.org/) test server at `https://hapi.fhir.org/baseR4`. They need internet access and create, update and delete test Patient resources on that public server.
+- **Live end-to-end tests** (the `test_tool_*` tests in `tests/e2e/test_tools.py`): run the MCP tools against the public [HAPI FHIR](https://hapi.fhir.org/) test server at `https://hapi.fhir.org/baseR4`. They cover every tool, including `execute_bundle` (transaction, rollback and batch) and `patch` (ETag preconditions and failed `test` operations). They need internet access and create, update and delete tagged test Patient and Observation resources on that public server, deleting them afterwards.
 
 To skip only the live HAPI tests, for example when working offline:
 

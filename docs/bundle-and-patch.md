@@ -93,10 +93,12 @@ structure and JSON Pointer syntax; the server evaluates paths and changes.
 
 `if_match` is optional. Supplying the actual ETag protects a change based on an
 earlier read. Weak tags (`W/"7"`, as returned by HAPI FHIR), quoted tags (`"7"`)
-and bare version tokens (`7`, as returned by Aidbox) are accepted and sent unchanged. Wildcards, multiple tags, control
-characters and invalid version IDs are rejected. A 412 does not trigger a retry;
-read the latest resource and reassess the intended change. Omitting `if_match`
-makes the PATCH unconditional.
+and bare version tokens (`7`, as returned by Aidbox) are accepted and sent
+unchanged. Wildcards, multiple tags, control characters and invalid version IDs
+are rejected. If the resource has changed, the server rejects the patch: the FHIR
+specification uses 412, and HAPI FHIR returns 409. Neither triggers a retry; read
+the latest resource and reassess the intended change. Omitting `if_match` makes
+the PATCH unconditional.
 
 Both tools accept `prefer="representation"` (default) or `"minimal"`, mapped to
 `Prefer: return=...`. This preference applies to write representations, not GET
@@ -162,3 +164,23 @@ resource metadata and adds patch formats, versioning and conditional-operation
 support when advertised. Discovery uses caller credentials and timeout and refuses
 redirects. Results are advisory, not authorization or a mandatory round trip before
 every write.
+
+## Server differences
+
+The tools report what the server actually does. These differences were observed
+between public HAPI FHIR (8.13, the project's default live test server) and a
+sandbox Aidbox instance:
+
+| Behavior | HAPI FHIR | Aidbox |
+|---|---|---|
+| ETag format | `W/"1"` | `1` |
+| ETag header on a PATCH response | Not sent; use `response.meta.versionId` | Sent |
+| PATCH with a stale `if_match` | 409 | 412 |
+| Failed JSON Patch `test` operation | 400 | 422 |
+| Transaction with a failing GET entry | GET of a missing resource: HTTP 200; writes commit and the GET entry reports 404, so the tool returns `unknown` | Forbidden GET: HTTP 400; nothing commits |
+| Transaction with a write that references a missing resource | HTTP 400; nothing commits | Not measured |
+| Batch GET results with `prefer="minimal"` | Returned | Omitted |
+| PATCH with `prefer="minimal"` | HTTP 200, no body | HTTP 200, no body |
+
+Do not rely on a failed GET to abort a transaction. Check `status` and each
+entry's `response.status`.

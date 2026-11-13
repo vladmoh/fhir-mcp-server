@@ -37,7 +37,9 @@ tests/
 
 `python run_tests.py` runs everything under `tests/`, as CI does. That includes the
 live `test_tool_*` tests in `tests/e2e/test_tools.py`, which need internet access and
-create, update and delete test Patient resources on public HAPI. To run without
+create, update and delete test Patient and Observation resources on public HAPI.
+They tag what they create with the identifier system `urn:fhir-mcp-server:e2e` and
+delete it afterwards. To run without
 contacting HAPI:
 
 ```bash
@@ -187,8 +189,13 @@ When adding new tests:
 
 ## Bundle and PATCH tests
 
-`execute_bundle` and `patch` are covered by the default suite without a live
-FHIR server:
+`execute_bundle` and `patch` are tested live against public HAPI by the
+`test_tool_execute_bundle_*` and `test_tool_patch` tests in `tests/e2e/test_tools.py`:
+a linked transaction, transaction rollback, a partly failing batch, JSON Patch
+with current and stale ETags, and a failing `test` operation. Where HAPI differs
+from other servers, see [Server differences](../docs/bundle-and-patch.md#server-differences).
+
+They are also covered without a live FHIR server:
 
 - `tests/unit/test_interaction_validation.py`: Bundle and JSON Patch validation.
 - `tests/integration/test_fhir_http.py` and `test_interaction_handlers.py`: HTTP
